@@ -1,3 +1,6 @@
+# Modules tracked in extra repositories.
+/modules/lucky
+
 # Godot auto generated files
 *.gen.*
 
