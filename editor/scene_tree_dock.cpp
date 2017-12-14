@@ -1117,7 +1117,7 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 		former_names.push_back(node->get_name());
 
 		List<Node *> owned;
-		node->get_owned_by(node->get_owner(), &owned);
+		node->get_owner()->get_owned_by(node->get_owner(), &owned);
 		Array owners;
 		for (List<Node *>::Element *E = owned.front(); E; E = E->next()) {
 
@@ -1150,6 +1150,9 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 		}
 
 		editor_data->get_undo_redo().add_do_method(this, "_set_owners", edited_scene, owners);
+		// Discard instancing of owner
+		if (node->get_owner() && node->get_owner() != edited_scene && node->get_owner()->get_filename() != String())
+			editor_data->get_undo_redo().add_do_method(node->get_owner(), "set_filename", String());
 
 		if (AnimationPlayerEditor::singleton->get_key_editor()->get_root() == node)
 			editor_data->get_undo_redo().add_do_method(AnimationPlayerEditor::singleton->get_key_editor(), "set_root", node);
@@ -1167,7 +1170,7 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 		Node *node = p_nodes[ni];
 
 		List<Node *> owned;
-		node->get_owned_by(node->get_owner(), &owned);
+		node->get_owner()->get_owned_by(node->get_owner(), &owned);
 		Array owners;
 		for (List<Node *>::Element *E = owned.front(); E; E = E->next()) {
 
@@ -1178,7 +1181,13 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 
 		editor_data->get_undo_redo().add_undo_method(node->get_parent(), "add_child", node);
 		editor_data->get_undo_redo().add_undo_method(node->get_parent(), "move_child", node, child_pos);
-		editor_data->get_undo_redo().add_undo_method(this, "_set_owners", edited_scene, owners);
+
+		editor_data->get_undo_redo().add_undo_method(this, "_set_owners", node->get_owner(), owners);
+
+		// Restore instancing of owner
+		if (node->get_owner() && node->get_owner() != edited_scene && node->get_owner()->get_filename() != String())
+			editor_data->get_undo_redo().add_undo_method(node->get_owner(), "set_filename", node->get_owner()->get_filename());
+
 		if (AnimationPlayerEditor::singleton->get_key_editor()->get_root() == node)
 			editor_data->get_undo_redo().add_undo_method(AnimationPlayerEditor::singleton->get_key_editor(), "set_root", node);
 
