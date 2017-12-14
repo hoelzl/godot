@@ -1078,6 +1078,29 @@ void SceneTreeDock::_node_reparent(NodePath p_path, bool p_keep_global_xform) {
 	_do_reparent(new_parent, -1, nodes, p_keep_global_xform);
 }
 
+static void compute_owners_for_children(const Node *p_node, const Node *p_new_parent, const Node *p_edited_scene, const Array &p_owners, Map<const Node *, Array> &p_other_owners) {
+	List<const Node *> children;
+
+	children.push_back(p_node);
+	for (List<const Node *>::Element *E = children.front(); E; E = E->next()) {
+		for (int i = 0; i < E->get()->get_child_count(); i++) {
+			children.push_back(E->get()->get_child(i));
+		}
+	}
+
+	for (List<const Node *>::Element *E = children.front(); E; E = E->next()) {
+		const Node *owner = E->get()->get_owner();
+		if (owner && !p_owners.has(E->get())) {
+			if (owner != p_node && !owner->is_a_parent_of(p_new_parent))
+				owner = p_edited_scene;
+			if (!p_other_owners.has(owner))
+				p_other_owners[owner] = Array();
+
+			p_other_owners[E->get()->get_owner()].push_back(E->get());
+		}
+	}
+}
+
 void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, Vector<Node *> p_nodes, bool p_keep_global_xform) {
 
 	Node *new_parent = p_new_parent;
@@ -1124,6 +1147,14 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 			owners.push_back(E->get());
 		}
 
+		// Children of `node` that are not owned by `node->get_owner()` need to have their owner set
+		// as well, since the `remove_child`, `add_child` combo clears the owner, and
+		// `SceneTreeEditor::_add_nodes` discards nodes without owner. In order to use `_set_owners`
+		// we store this relationship in a dictionary mapping each owner to an array containing its
+		// children
+		Map<const Node *, Array> other_owners;
+		compute_owners_for_children(node, new_parent, edited_scene, owners, other_owners);
+
 		if (new_parent == node->get_parent() && node->get_index() < p_position_in_parent + ni) {
 			//if child will generate a gap when moved, adjust
 			inc--;
@@ -1150,6 +1181,8 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 		}
 
 		editor_data->get_undo_redo().add_do_method(this, "_set_owners", edited_scene, owners);
+		for (Map<const Node *, Array>::Element *E = other_owners.front(); E; E = E->next())
+			editor_data->get_undo_redo().add_do_method(this, "_set_owners", E->key(), E->value());
 		// Discard instancing of owner
 		if (node->get_owner() && node->get_owner() != edited_scene && node->get_owner()->get_filename() != String())
 			editor_data->get_undo_redo().add_do_method(node->get_owner(), "set_filename", String());
@@ -1177,12 +1210,17 @@ void SceneTreeDock::_do_reparent(Node *p_new_parent, int p_position_in_parent, V
 			owners.push_back(E->get());
 		}
 
+		Map<const Node *, Array> other_owners;
+		compute_owners_for_children(node, new_parent, edited_scene, owners, other_owners);
+
 		int child_pos = node->get_position_in_parent();
 
 		editor_data->get_undo_redo().add_undo_method(node->get_parent(), "add_child", node);
 		editor_data->get_undo_redo().add_undo_method(node->get_parent(), "move_child", node, child_pos);
 
 		editor_data->get_undo_redo().add_undo_method(this, "_set_owners", node->get_owner(), owners);
+		for (Map<const Node *, Array>::Element *E = other_owners.front(); E; E = E->next())
+			editor_data->get_undo_redo().add_do_method(this, "_set_owners", E->key(), E->value());
 
 		// Restore instancing of owner
 		if (node->get_owner() && node->get_owner() != edited_scene && node->get_owner()->get_filename() != String())
